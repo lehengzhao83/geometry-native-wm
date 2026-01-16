@@ -172,8 +172,3 @@ This work builds upon ideas from:
 * Riemannian Optimization
 * Hyperbolic Representation Learning
 * Structured Latent Variable Models
-
-```
-
-
-
