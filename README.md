@@ -44,18 +44,18 @@ This ensures **closed-form, geometry-consistent state transitions**, preventing 
 
 ---
 
-## ✨ Key Contributions
+✨ Key Contributions
 
-* **Geometry as State Space**
+ **Geometry as State Space**
   Latent states *live on manifolds*, not in Euclidean space with post-hoc regularization.
 
-* **Product Manifold Factorization**
+ **Product Manifold Factorization**
   Different world factors (hierarchy, periodicity, pose, noise) are embedded into appropriate geometric components.
 
-* **Stable Long-Horizon Rollout**
+ **Stable Long-Horizon Rollout**
   Exponential-map updates eliminate drift and error explosion over long horizons.
 
-* **Robustness to OOD Shifts**
+ **Robustness to OOD Shifts**
   Manifold constraints preserve structure under distribution shift.
 
 ---
