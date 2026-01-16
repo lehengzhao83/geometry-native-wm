@@ -1,0 +1,163 @@
+# configs/toy_hierarchy.yaml
+# Geometry-Native World Model — Toy Hierarchy World
+#
+# This config is designed to be "hard to break":
+# - explicit defaults
+# - deterministic by default
+# - paths are relative and safe
+# - includes both Euclidean and Hyperbolic settings for easy toggling
+
+experiment:
+  name: toy_hierarchy
+  seed: 42
+  device: auto          # auto | cpu | cuda
+  dtype: float32        # float32 recommended
+  work_dir: ./runs/toy_hierarchy
+  log_every: 50
+  save_every: 1
+  num_workers: 0        # safest default across OS
+
+data:
+  dataset: toy_hierarchy
+  # data will be generated on the fly and optionally cached to disk
+  cache:
+    enabled: true
+    dir: ./data_cache/toy_hierarchy
+    overwrite: false
+
+  # ===== Tree / hierarchy generation =====
+  tree:
+    branching_factor: 3         # each internal node has this many children
+    depth: 5                    # root at depth 0; leaves at depth=depth
+    # total nodes ~ (b^(d+1)-1)/(b-1)
+    # total leaves = b^d
+
+  # ===== Sequence generation =====
+  sequence:
+    length: 16                  # T steps per sample
+    mode: random_walk_on_tree   # random_walk_on_tree | leaf_to_root | root_to_leaf
+    p_stay: 0.10                # probability to stay at same node
+    p_parent: 0.30              # probability to move to parent (if exists)
+    p_child: 0.60               # probability to move to a random child (if exists)
+    # the above will be renormalized when parent/child doesn't exist
+
+  # ===== Observations =====
+  observation:
+    type: symbol_embed          # symbol_embed | onehot | noisy_embed
+    vocab_size: auto            # auto | int; if auto => number of nodes
+    embed_dim: 64
+    noise_std: 0.05             # gaussian noise on embeddings
+    dropout_prob: 0.0           # feature dropout probability (0 for stable)
+
+  # ===== Splits =====
+  split:
+    train_size: 20000
+    val_size: 2000
+    test_size: 2000
+
+  # ===== OOD settings (optional) =====
+  ood:
+    enabled: true
+    # Example OOD: different branching factor or depth at test time
+    test_branching_factor: 4
+    test_depth: 5
+    # Another OOD axis: different transition probabilities
+    test_p_stay: 0.05
+    test_p_parent: 0.15
+    test_p_child: 0.80
+
+model:
+  # World model interface: x_t -> z_t -> z_{t+1} -> x_{t+1}
+  encoder:
+    type: mlp
+    input_dim: ${data.observation.embed_dim}
+    hidden_dims: [256, 256]
+    output_dim: 64
+    activation: gelu
+    layernorm: true
+    dropout: 0.0
+
+  decoder:
+    type: mlp
+    input_dim: ${model.latent.dim_total}
+    hidden_dims: [256, 256]
+    output_dim: ${data.observation.embed_dim}
+    activation: gelu
+    layernorm: true
+    dropout: 0.0
+
+  # ===== Latent geometry =====
+  latent:
+    # Choose one:
+    # - euclidean_only (baseline)
+    # - hyperbolic_only (hierarchy-native)
+    # - product (for later; here we keep it simple)
+    geometry: hyperbolic_only
+
+    # Total latent size used by encoder output (before mapping to manifold)
+    dim_total: 64
+
+    # Hyperbolic manifold parameters (Poincaré ball via geoopt)
+    hyperbolic:
+      model: poincare_ball     # poincare_ball | lorentz (if you implement)
+      dim: 64
+      curvature: 1.0           # positive number; c=1 corresponds to unit ball
+      learn_curvature: false
+
+  dynamics:
+    type: tangent_mlp
+    hidden_dims: [256, 256]
+    activation: gelu
+    layernorm: true
+    dropout: 0.0
+    # No actions in toy hierarchy by default:
+    action_dim: 0
+
+training:
+  epochs: 20
+  batch_size: 256
+  lr: 0.0003
+  weight_decay: 0.01
+  grad_clip_norm: 1.0
+
+  # teacher forcing / 1-step prediction for stability
+  prediction:
+    horizon: 1
+
+  losses:
+    recon:
+      enabled: true
+      type: mse
+      weight: 1.0
+
+    # geometry-native geodesic loss (distance on manifold)
+    geodesic_rollout:
+      enabled: true
+      horizon: 8
+      gamma: 0.98
+      weight: 0.5
+
+    # optional contrastive on tree distance
+    hierarchy_metric:
+      enabled: true
+      weight: 0.0   # keep 0.0 unless you implement it
+
+evaluation:
+  metrics:
+    # Core: rollout stability curve
+    rollout:
+      enabled: true
+      horizons: [1, 2, 4, 8, 16, 32]
+
+    # Hierarchy quality: correlation between latent distances and tree distances
+    hierarchy_correlation:
+      enabled: true
+      num_pairs: 5000
+
+  save_figures: true
+  figures_dir: ${experiment.work_dir}/figures
+
+runtime:
+  # set to true if you want full determinism (may reduce speed)
+  deterministic: true
+  cudnn_benchmark: false
