@@ -160,7 +160,7 @@ python ood_eval.py --config configs/toy_periodic.yaml
 
 * This codebase prioritizes **correctness and robustness** over maximum speed.
 * All geometry operations are explicit and interpretable.
-* Designed for ICML/NeurIPS artifact evaluation.
+* Designed for ICML artifact evaluation.
 
 ---
 
