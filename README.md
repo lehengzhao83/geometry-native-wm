@@ -1,9 +1,6 @@
 # geometry-native-wm
 geometry-native-wm-ICML2026
 
-下面是**完整、可直接复制到 GitHub 的 `README.md`**。
-我已经注意了 **Markdown 数学公式（LaTeX）表达的兼容性**（GitHub 渲染 OK），结构和措辞也对齐 **ICML / NeurIPS Artifact Evaluation** 的标准。
-
 ---
 
 ````markdown
