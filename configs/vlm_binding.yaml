@@ -1,1 +1,289 @@
+# configs/vlm_binding.yaml
+# Geometry-Native World Model — VLM Binding/Counting/Spatial (WORKS OUT-OF-THE-BOX)
+#
+# IMPORTANT:
+# This config is deliberately set to a SAFE default that will RUN without any external
+# datasets or pretrained models:
+#   data.dataset = toy_vlm_binding
+#
+# It generates synthetic images + paired text prompts + labels for:
+# - counting
+# - attribute binding (color-shape)
+# - spatial relations (left/right/front/back in 2D grid)
+#
+# You can later swap to a real dataset by changing data.dataset and data.real_* fields,
+# while keeping the same training/eval interface.
+
+experiment:
+  name: vlm_binding
+  seed: 42
+  device: auto                 # auto | cpu | cuda
+  dtype: float32
+  work_dir: ./runs/vlm_binding
+  log_every: 50
+  save_every: 1
+  num_workers: 0
+  pin_memory: true
+
+data:
+  dataset: toy_vlm_binding
+
+  cache:
+    enabled: true
+    dir: ./data_cache/vlm_binding
+    overwrite: false
+
+  # ===== Synthetic scene generator =====
+  scene:
+    image_size: 64
+    channels: 3
+    background: black          # black | gray | random
+    max_objects: 6
+    min_objects: 1
+
+    shapes: [circle, square, triangle]
+    colors: [red, green, blue, yellow, cyan, magenta]
+
+    # object size range in pixels (radius / half-side)
+    size:
+      min: 5
+      max: 10
+
+    # placement grid to simplify spatial relations
+    grid:
+      enabled: true
+      rows: 4
+      cols: 4
+      jitter: 2               # pixel jitter within cell
+
+    occlusion:
+      enabled: true
+      p_occlude: 0.10
+      max_occluders: 1
+      occluder_size:
+        min: 10
+        max: 18
+
+    noise_std: 0.02
+
+  # ===== Task definitions =====
+  tasks:
+    # Counting: "How many <color> <shape> are there?"
+    counting:
+      enabled: true
+      max_count: 6
+
+    # Binding: "Is there a <color> <shape>?"
+    binding:
+      enabled: true
+
+    # Spatial relation: "Is the <color1> <shape1> left of the <color2> <shape2>?"
+    spatial:
+      enabled: true
+      relations: [left_of, right_of, above, below]
+
+  # ===== Text prompt templates =====
+  text:
+    # We keep tokenization extremely simple so it always works.
+    # Your code should build a vocab from these templates + colors/shapes/relations.
+    templates:
+      counting:
+        - "how many {color} {shape} are there"
+        - "count {color} {shape}"
+      binding:
+        - "is there a {color} {shape}"
+        - "does the scene contain a {color} {shape}"
+      spatial:
+        - "is the {color1} {shape1} {rel} the {color2} {shape2}"
+        - "the {color1} {shape1} is {rel} the {color2} {shape2} true or false"
+    lowercase: true
+
+  # ===== Splits =====
+  split:
+    train_size: 40000
+    val_size: 4000
+    test_size: 4000
+
+  # ===== OOD settings =====
+  # OOD is essential: test on compositions unseen in training.
+  ood:
+    enabled: true
+
+    # Composition shift:
+    # - hold out some (color, shape) pairs during training; test only on held-out pairs
+    heldout_pairs_fraction: 0.20
+
+    # Count shift: train on small counts, test on larger counts
+    count_shift:
+      enabled: true
+      train_max_count: 3
+      test_max_count: 6
+
+    # Visual shift: different noise/occlusion severity at test
+    visual_shift:
+      enabled: true
+      test_noise_std: 0.06
+      test_p_occlude: 0.25
+
+loader:
+  batch_size: 256
+  eval_batch_size: 256
+  shuffle: true
+  drop_last: true
+
+model:
+  # ===== Vision encoder (small CNN, no pretrained needed) =====
+  vision_encoder:
+    type: cnn_small
+    in_channels: ${data.scene.channels}
+    image_size: ${data.scene.image_size}
+    base_channels: 64
+    num_layers: 4
+    activation: gelu
+    feature_dim: 256
+
+  # ===== Text encoder (simple, always works) =====
+  text_encoder:
+    type: bow                # bow | mlp_bow | tiny_transformer (if you implement)
+    vocab:
+      build_from_templates: true
+      max_vocab_size: 5000
+      min_freq: 1
+    embed_dim: 128
+    output_dim: 256
+    activation: gelu
+    dropout: 0.0
+
+  # ===== Fusion to form "state" z_t (or joint latent) =====
+  fusion:
+    type: concat_mlp
+    input_dim: 512           # vision_feature_dim + text_output_dim
+    hidden_dims: [512, 256]
+    activation: gelu
+    layernorm: true
+    output_dim: ${model.latent.dim_total}
+    dropout: 0.0
+
+  # ===== Latent geometry =====
+  latent:
+    # Choose:
+    # - euclidean_only (baseline)
+    # - product (recommended): periodic-ish / discrete-ish structure + residual
+    geometry: product
+
+    product:
+      factors:
+        # A small circle factor can help with "cyclic" aliasing-like issues in binding/counting probes
+        # (this is optional but keeps the geometry pathway exercised).
+        - name: circle
+          manifold: circle
+          num_circles: 4
+          representation: unit_vector_2d   # each circle is 2D (cos,sin)
+          project_eps: 1.0e-6
+        - name: euclid
+          manifold: euclidean
+          dim: 64
+
+    # total exposed latent dim after concatenation:
+    # 2*4 + 64 = 72
+    dim_total: 72
+
+  # ===== "World model" head: next-step optional (disabled by default) =====
+  # For binding tasks you often don't need temporal dynamics; keep it off for MVP.
+  dynamics:
+    enabled: false
+    type: tangent_mlp
+    hidden_dims: [256, 256]
+    activation: gelu
+    layernorm: true
+    dropout: 0.0
+    action_dim: 0
+
+  # ===== Task heads =====
+  heads:
+    counting:
+      enabled: ${data.tasks.counting.enabled}
+      type: mlp_classifier
+      input_dim: ${model.latent.dim_total}
+      hidden_dims: [256, 256]
+      num_classes: ${data.tasks.counting.max_count}   # counts in [1..max_count] or [0..max_count-1] depending on your impl
+      activation: gelu
+      dropout: 0.0
+
+    binding:
+      enabled: ${data.tasks.binding.enabled}
+      type: mlp_classifier
+      input_dim: ${model.latent.dim_total}
+      hidden_dims: [256, 256]
+      num_classes: 2
+      activation: gelu
+      dropout: 0.0
+
+    spatial:
+      enabled: ${data.tasks.spatial.enabled}
+      type: mlp_classifier
+      input_dim: ${model.latent.dim_total}
+      hidden_dims: [256, 256]
+      num_classes: 2
+      activation: gelu
+      dropout: 0.0
+
+training:
+  epochs: 20
+  lr: 0.0005
+  weight_decay: 0.01
+  grad_clip_norm: 1.0
+  amp:
+    enabled: true
+
+  losses:
+    # Multi-task classification losses (sum)
+    counting_ce:
+      enabled: ${data.tasks.counting.enabled}
+      weight: 1.0
+    binding_ce:
+      enabled: ${data.tasks.binding.enabled}
+      weight: 1.0
+    spatial_ce:
+      enabled: ${data.tasks.spatial.enabled}
+      weight: 1.0
+
+    # Geometry-native regularizer: encourage stability under small augmentations
+    # Your code can implement it as:
+    #   z = enc(x,t); z_aug = enc(aug(x),t); loss = d_M(z,z_aug)^2
+    geodesic_invariance:
+      enabled: true
+      weight: 0.1
+
+    # Optional: long-horizon rollout loss if you enable dynamics (keep off for MVP)
+    geodesic_rollout:
+      enabled: false
+      horizon: 8
+      gamma: 0.98
+      weight: 0.5
+
+evaluation:
+  every_epochs: 1
+  metrics:
+    # In-domain
+    accuracy:
+      enabled: true
+    # OOD splits
+    ood:
+      enabled: ${data.ood.enabled}
+      report_by_task: true
+    # Error breakdowns for paper plots
+    breakdown:
+      enabled: true
+      by:
+        - task
+        - count_bin         # e.g., small vs large counts
+        - heldout_pair      # seen vs unseen compositions
+
+  save_figures: true
+  figures_dir: ${experiment.work_dir}/figures
+
+runtime:
+  deterministic: true
+  cudnn_benchmark: false
 
