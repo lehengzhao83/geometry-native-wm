@@ -1,7 +1,7 @@
 
 ---
 
-```markdown
+
 # Geometry-Native World Models
 
 This repository contains the official implementation for:
