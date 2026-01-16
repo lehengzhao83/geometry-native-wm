@@ -1,1 +1,226 @@
+# configs/real_video.yaml
+# Geometry-Native World Model — "Real Video" (WORKS OUT-OF-THE-BOX)
+#
+# IMPORTANT:
+# This config is deliberately set to a SAFE default that will RUN on any machine
+# without downloading large video datasets:
+#   data.dataset = fake_video
+#
+# When you are ready to use a real dataset (folder of videos), switch:
+#   data.dataset = video_folder
+# and set data.video_folder.root accordingly.
+#
+# The rest of the pipeline (encoder/dynamics/decoder/rollout eval) stays the same.
+
+experiment:
+  name: real_video
+  seed: 42
+  device: auto            # auto | cpu | cuda
+  dtype: float32
+  work_dir: ./runs/real_video
+  log_every: 20
+  save_every: 1
+  num_workers: 0          # safest across OS
+  pin_memory: true
+
+data:
+  # ===== Choose dataset backend =====
+  # Options (recommended):
+  # - fake_video     : ALWAYS works, no downloads; good for sanity + debugging
+  # - video_folder   : real videos in a folder (mp4/avi), requires your own data
+  dataset: fake_video
+
+  cache:
+    enabled: false
+    dir: ./data_cache/real_video
+    overwrite: false
+
+  # ===== Clip settings =====
+  clip:
+    num_frames: 16         # T
+    frame_stride: 2        # take every k-th frame in the source stream
+    fps: 15                # only used by some loaders; safe default
+    # For evaluation rollouts
+    rollout_horizons: [1, 2, 4, 8, 16, 32]
+
+  # ===== Video frame preprocessing =====
+  preprocess:
+    # Output frames are [C,H,W] with values in [0,1]
+    image_size: 64
+    channels: 3
+    normalize:
+      enabled: true
+      mean: [0.485, 0.456, 0.406]
+      std:  [0.229, 0.224, 0.225]
+
+  # ===== fake_video backend (ALWAYS works) =====
+  fake_video:
+    train_size: 20000
+    val_size: 2000
+    test_size: 2000
+    # "realistic enough" random motion: we recommend your dataset class implement
+    # simple synthetic motion (translation/rotation) to avoid trivial i.i.d. frames.
+    motion:
+      enabled: true
+      max_translation: 6      # pixels
+      max_rotation_deg: 10
+      p_occlusion: 0.10
+    noise_std: 0.02
+
+  # ===== video_folder backend (your real data) =====
+  # Put videos under root, optionally with subfolders per class (not required).
+  # Your loader should:
+  # - index videos
+  # - sample clips of length num_frames with frame_stride
+  # - return tensor [T,C,H,W] float32
+  video_folder:
+    root: ./data/video_folder_example
+    extensions: [".mp4", ".avi", ".mov", ".mkv"]
+    recursive: true
+    # split by ratio if you don't have predefined splits
+    split_ratio:
+      train: 0.90
+      val: 0.05
+      test: 0.05
+    max_videos: 0           # 0 means no limit
+
+  # ===== OOD / corruption evaluation =====
+  # Your eval script should create corrupted versions of the same test clips.
+  ood:
+    enabled: true
+    # corruption types: gaussian_noise | gaussian_blur | brightness | occlusion | jpeg
+    corruptions:
+      - type: gaussian_noise
+        severity: 2
+      - type: gaussian_blur
+        severity: 2
+      - type: brightness
+        severity: 2
+      - type: occlusion
+        severity: 2
+
+loader:
+  batch_size: 32
+  eval_batch_size: 32
+  shuffle: true
+  drop_last: true
+
+model:
+  # ===== Encoder: per-frame CNN + temporal pooling =====
+  encoder:
+    type: cnn_small
+    in_channels: ${data.preprocess.channels}
+    base_channels: 64
+    num_layers: 4
+    activation: gelu
+    layernorm: false
+    # Produces per-frame feature vectors
+    feature_dim: 256
+
+  temporal_aggregator:
+    # Aggregates frame features into z_t (state at time t).
+    # For a pure world model, you may set "per_step" states; this config uses
+    # a simple per-frame state: z_t from frame t features (no aggregation).
+    type: identity   # identity | gru | transformer
+    hidden_dim: 256
+    num_layers: 1
+
+  # ===== Latent geometry =====
+  latent:
+    # Choose:
+    # - euclidean_only (baseline)
+    # - circle_only   (if you want S^1 factors for periodic motion)
+    # - product       (recommended for video: S^1^k + R^d)
+    geometry: product
+
+    product:
+      # Video has both periodic-ish motion + residual appearance factors.
+      # Keep it modest to reduce implementation complexity.
+      factors:
+        - name: periodic
+          manifold: circle
+          num_circles: 8
+          representation: unit_vector_2d  # each circle is 2D (cos,sin)
+          project_eps: 1.0e-6
+        - name: euclid
+          manifold: euclidean
+          dim: 64
+
+    # Total latent dimension exposed to downstream modules after concatenation.
+    # If your implementation uses (cos,sin) for each circle: periodic dim = 2*num_circles.
+    # Here: 2*8 + 64 = 80
+    dim_total: 80
+
+  # ===== Dynamics: tangent update on manifold =====
+  dynamics:
+    type: tangent_mlp
+    hidden_dims: [256, 256]
+    activation: gelu
+    layernorm: true
+    dropout: 0.0
+    action_dim: 0
+
+  # ===== Decoder: predict next frame (or next-frame features then decode) =====
+  decoder:
+    type: deconv_small
+    in_dim: ${model.latent.dim_total}
+    out_channels: ${data.preprocess.channels}
+    base_channels: 64
+    num_upsamples: 4
+    activation: gelu
+
+training:
+  epochs: 30
+  lr: 0.0003
+  weight_decay: 0.01
+  grad_clip_norm: 1.0
+  amp:
+    enabled: true          # mixed precision if cuda
+  scheduler:
+    type: cosine
+    warmup_steps: 500
+
+  # ===== Training objective =====
+  prediction:
+    # 1-step prediction + multi-step rollout regularizer
+    teacher_forcing: true
+    one_step_weight: 1.0
+
+  losses:
+    # Reconstruct x_{t+1}
+    recon:
+      enabled: true
+      type: mse            # mse | l1
+      weight: 1.0
+
+    # Long-horizon latent rollout stability on manifold
+    geodesic_rollout:
+      enabled: true
+      horizon: 16
+      gamma: 0.98
+      weight: 0.5
+
+    # Optional perceptual/feature loss (implement if you want; keep off by default)
+    perceptual:
+      enabled: false
+      weight: 0.0
+
+evaluation:
+  every_epochs: 1
+  metrics:
+    rollout_curve:
+      enabled: true
+      horizons: ${data.clip.rollout_horizons}
+
+    ood:
+      enabled: ${data.ood.enabled}
+
+  save_figures: true
+  figures_dir: ${experiment.work_dir}/figures
+  save_videos: true
+  videos_dir: ${experiment.work_dir}/videos
+
+runtime:
+  deterministic: true
+  cudnn_benchmark: false
 
