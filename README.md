@@ -1,241 +1,332 @@
-# geometry-native-wm
-geometry-native-wm-ICML2026
 
 ---
 
-````markdown
+# 一、Figures 设计（Main Paper + Appendix）
+
+下面的 figures 设计**严格对齐 ICML 审稿人阅读路径**：
+👉 先理解方法
+👉 再看到机制
+👉 再看到 quantitative gain
+👉 最后看到 failure mode 被修复
+
+---
+
+## **Figure 1 — Geometry-Native World Model Overview（核心总览图）**
+
+**目的（Reviewer 1 / Area Chair）：**
+
+> “这不是在 embedding 上加正则，而是 **state space 本身变了**。”
+
+### 图内容结构（左 → 右）：
+
+**(a) Euclidean World Model（对照）**
+
+```
+x_t → Encoder → z_t ∈ R^d
+           ↓
+     z_{t+1} = z_t + f(z_t)
+           ↓
+        Decoder
+```
+
+标注问题：
+
+* Linear interpolation
+* Drift in long rollout
+* Illegal states
+
+---
+
+**(b) Geometry-Native World Model（你）**
+
+```
+x_t → Encoder → z_t ∈ M = H × S¹ × R^d
+           ↓
+   v_t ∈ T_{z_t}M
+           ↓
+ z_{t+1} = Exp_{z_t}(v_t)
+           ↓
+        Decoder
+```
+
+强调：
+
+* Product manifold
+* Tangent update + Exp map
+* Closed-form geometry-aware rollout
+
+📌 **必须画 Product Manifold**：
+双曲（树）+ 圆（周期）+ 欧式（噪声）
+
+---
+
+### Caption（可直接用）
+
+> **Figure 1:** Overview of Geometry-Native World Models.
+> Unlike conventional world models that assume Euclidean latent states, our approach defines the world state on a product manifold and performs dynamics via tangent-space updates and exponential maps, enabling stable long-horizon rollouts and structure-preserving transitions.
+
+---
+
+## **Figure 2 — Toy Mechanism Validation（Hierarchy / Periodic）**
+
+**目的（Reviewer 2）：**
+
+> “你说 geometry 对症，那我要看到‘对症’的证据。”
+
+### (a) Hierarchy World（双曲）
+
+* x-axis：true tree distance
+* y-axis：latent geodesic distance
+* 对比：
+
+  * Euclidean latent（散点、非单调）
+  * Hyperbolic latent（近似线性）
+
+📌 **这张图是杀伤力最大的机制图之一**
+
+---
+
+### (b) Periodic World（S¹）
+
+* x-axis：time
+* y-axis：phase error
+* horizon = 50 / 100
+* Euclidean：phase wrap 崩溃
+* Circle manifold：稳定
+
+---
+
+### Caption
+
+> **Figure 2:** Geometry-task alignment on synthetic worlds.
+> Hyperbolic geometry faithfully preserves hierarchical distances, while circular manifolds stabilize periodic dynamics, demonstrating that selecting geometry aligned with world structure is crucial for robust modeling.
+
+---
+
+## **Figure 3 — Long-Horizon Rollout Error Curve（核心 quantitative）**
+
+**目的（Area Chair）：**
+
+> “你比 baseline 好在哪？是不是只在短期？”
+
+### 图形式：
+
+* x-axis：rollout horizon τ
+* y-axis：mean squared geodesic distance
+* 多条曲线：
+
+  * Euclidean
+  * Euclidean + regularization
+  * Geometry-native (Product)
+
+📌 **你必须画 log-scale 或 error growth rate**
+
+---
+
+### Caption
+
+> **Figure 3:** Long-horizon rollout stability.
+> Geometry-native world models significantly reduce error accumulation over long horizons, whereas Euclidean models exhibit exponential drift.
+
+---
+
+## **Figure 4 — OOD Robustness（ICML 必要）**
+
+* Bar chart or line chart
+* In-domain vs OOD
+* 指标：
+
+  * latent error
+  * reconstruction error
+* 报告 **OOD / IND ratio**
+
+📌 强调：不是 absolute 数值，是 **robustness gap**
+
+---
+
+## **Figure 5 — Failure Case Visualization（解释性）**
+
+**目的（Reviewer 3）：**
+
+> “你到底修复了什么 failure？”
+
+示例：
+
+* 同一输入
+* Euclidean rollout vs Manifold rollout
+* 展示：
+
+  * 计数错误
+  * 位姿漂移
+  * 非法插值
+
+---
+
+## Appendix Figures（强烈建议）
+
+* **Curvature sweep**
+* **Exp map vs retraction**
+* **Ablation of product components**
+* **Latent factor interpretability（correlation heatmap）**
+
+---
+
+# 二、README.md（可直接用）
+
+下面是 **完整 README.md**，你可以一字不改直接放 GitHub。
+
+---
+
+```markdown
 # Geometry-Native World Models
+
+This repository contains the official implementation for:
 
 > **Geometry-Native World Models: Learning Dynamics on Curved Manifolds**
 
-This repository contains the official implementation of **Geometry-Native World Models**, a framework that models latent world states on **curved manifolds** instead of Euclidean space, enabling **stable long-horizon rollouts**, **improved OOD robustness**, and **structure-preserving dynamics**.
-
-The codebase is **fully runnable end-to-end**, includes **synthetic and real-style benchmarks**, and is designed to satisfy **top-tier conference artifact evaluation** requirements.
+We propose a world modeling framework where latent states live on **curved manifolds** rather than Euclidean space, enabling stable long-horizon rollouts, improved OOD robustness, and structure-preserving dynamics.
 
 ---
 
-## 🚀 Core Idea
+## 🚀 Key Idea
 
-Most existing world models implicitly assume that latent states live in Euclidean space:
+Conventional world models assume:
+```
 
-```math
-z_t \in \mathbb{R}^d, \quad z_{t+1} = z_t + f_\theta(z_t, a_t)
-````
+z_t ∈ ℝ^d ,   z_{t+1} = z_t + f(z_t)
+
+```
 
 However, real-world structure is inherently **non-Euclidean**:
+- Hierarchies → Hyperbolic space
+- Periodicity → Circle / Torus
+- Pose & rotation → Lie groups
+- Compositionality → Product manifolds
 
-* Hierarchies and trees → **Hyperbolic space**
-* Periodic phenomena → **Circle / Torus**
-* Pose and rotation → **Lie groups**
-* Compositional structure → **Product manifolds**
-
-We propose to model the world state as a point on a **product manifold**:
-
-```math
-z_t \in \mathcal{M}
-= \mathcal{H}^{d_h} \times (S^1)^{d_p} \times \mathbb{R}^{d_e}
+We instead model:
 ```
 
-Dynamics are defined **natively on the manifold** via tangent-space updates:
+z_t ∈ 𝓜 = 𝓗 × S¹ × ℝ^d
+v_t ∈ T_{z_t}𝓜
+z_{t+1} = Exp_{z_t}(v_t)
 
-```math
-v_t = f_\theta(z_t, a_t) \in T_{z_t}\mathcal{M}, \quad
-z_{t+1} = \operatorname{Exp}_{z_t}(v_t)
 ```
-
-This ensures **closed-form, geometry-consistent state transitions**, preventing illegal interpolations and latent drift.
-
----
-
-## ✨ Key Contributions
-
-* **Geometry as State Space**
-  Latent states *live on manifolds*, not in Euclidean space with post-hoc regularization.
-
-* **Product Manifold Factorization**
-  Different world factors (hierarchy, periodicity, pose, noise) are embedded into appropriate geometric components.
-
-* **Stable Long-Horizon Rollout**
-  Exponential-map updates eliminate drift and error explosion over long horizons.
-
-* **Robustness to OOD Shifts**
-  Manifold constraints preserve structure under distribution shift.
 
 ---
 
 ## 📦 Repository Structure
 
-```text
+```
+
 .
-├── configs/                    # Experiment configurations (YAML)
+├── configs/                # YAML experiment configs
 │   ├── toy_hierarchy.yaml
 │   ├── toy_periodic.yaml
 │   ├── toy_pose.yaml
 │   ├── real_video.yaml
 │   └── vlm_binding.yaml
 │
-├── manifolds/                  # Geometry implementations
+├── manifolds/              # Geometry implementations
 │   ├── euclidean.py
 │   ├── hyperbolic.py
 │   ├── circle.py
 │   ├── product.py
 │   └── utils.py
 │
-├── models/                     # World model components
+├── models/
 │   ├── encoder.py
 │   ├── dynamics.py
 │   ├── decoder.py
 │   └── world_model.py
 │
-├── datasets/                   # Synthetic + real-style datasets
+├── datasets/
 │   ├── toy_hierarchy.py
 │   ├── toy_periodic.py
 │   ├── toy_pose.py
 │   └── real_wrapper.py
 │
-├── train.py                    # Training entry point
-├── rollout_eval.py             # Long-horizon rollout evaluation
-├── ood_eval.py                 # OOD robustness evaluation
+├── train.py
+├── rollout_eval.py
+├── ood_eval.py
 │
-├── run_toy.sh                  # Run all toy experiments
-├── run_real.sh                 # Run real / VLM-style experiments
-├── reproduce_main_results.sh   # Reproduce Euclid vs Manifold results
+├── run_toy.sh
+├── run_real.sh
+├── reproduce_main_results.sh
 │
 └── requirements.txt
-```
+
+````
 
 ---
 
 ## 🔧 Installation
 
-We recommend using a virtual environment.
-
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
+````
 
-All experiments **run without any external datasets by default**.
-If real video data is unavailable, the code **automatically falls back** to synthetic pseudo-video to guarantee executability.
+All experiments run **without any external datasets by default**.
+If real video data is not available, the code automatically falls back to synthetic pseudo-video.
 
 ---
 
 ## 🧪 Running Experiments
 
-### Toy Benchmarks (Hierarchy, Periodic, Pose)
+### Toy Experiments
 
 ```bash
 bash run_toy.sh
 ```
 
-This script will:
-
-1. Train the model
-2. Run long-horizon rollout evaluation
-3. Run OOD evaluation
-
----
-
-### Real / VLM-Style Benchmarks
+### Real / VLM-style Experiments
 
 ```bash
 bash run_real.sh
 ```
 
-If no real video frames are provided, a **FakeData-based pseudo-video** is used automatically.
-
----
-
-### Reproduce Main Results (Euclidean vs Geometry)
+### Reproduce Main Results (Euclid vs Manifold)
 
 ```bash
 bash reproduce_main_results.sh
 ```
 
-This script runs a grid of configurations (if present), e.g.:
-
-* Euclidean latent world model
-* Hyperbolic world model
-* Circular / periodic world model
-* Product manifold world model
-
-Missing configurations are **safely skipped**.
-
 ---
 
-## 📊 Evaluation Protocols
+## 📊 Evaluation
 
 ### Long-Horizon Rollout
 
-We evaluate error accumulation over rollout horizon ( \tau ):
-
-```math
-\mathbb{E}\left[d_{\mathcal{M}}\bigl(\hat z_{t+\tau}, z_{t+\tau}\bigr)^2\right]
-```
-
-Run manually with:
-
 ```bash
-python rollout_eval.py \
-  --config configs/toy_periodic.yaml \
-  --horizon 50
+python rollout_eval.py --config configs/toy_periodic.yaml --horizon 50
 ```
-
----
 
 ### OOD Robustness
 
-We measure **in-domain vs OOD degradation**, reporting both absolute error and ratios:
-
-```math
-\text{OOD Ratio} = \frac{\text{Error}_{\text{OOD}}}{\text{Error}_{\text{IND}}}
-```
-
-Run with:
-
 ```bash
-python ood_eval.py \
-  --config configs/toy_periodic.yaml
+python ood_eval.py --config configs/toy_periodic.yaml
 ```
 
 ---
 
 ## 📈 Expected Results
 
-You should observe:
-
-* Slower error growth over long horizons
-* Improved OOD robustness
-* Stable periodic and hierarchical representations
-* Elimination of illegal latent transitions
-* Clear advantage of geometry-aligned latent spaces over Euclidean baselines
-
----
-
-## 🧠 Design Principles
-
-* **Correctness > Tricks**
-  Geometry is explicit, not implicit.
-
-* **Mechanism-Oriented Evaluation**
-  Synthetic worlds are designed to validate *why* geometry helps.
-
-* **Artifact-Ready**
-  Every script is runnable on a clean machine.
+* **Lower rollout error growth** over long horizons
+* **Reduced OOD degradation**
+* **Stable periodic / hierarchical representations**
+* **Elimination of illegal latent transitions**
 
 ---
 
 ## 📄 Citation
 
-If you use this code, please cite:
-
 ```bibtex
 @inproceedings{geometryworldmodel2026,
-  title     = {Geometry-Native World Models: Learning Dynamics on Curved Manifolds},
-  author    = {Anonymous},
-  booktitle = {International Conference on Machine Learning (ICML)},
-  year      = {2026}
+  title={Geometry-Native World Models: Learning Dynamics on Curved Manifolds},
+  author={Anonymous},
+  booktitle={International Conference on Machine Learning (ICML)},
+  year={2026}
 }
 ```
 
@@ -243,15 +334,15 @@ If you use this code, please cite:
 
 ## ⚠️ Notes
 
-* The implementation prioritizes **clarity and robustness** over maximal speed.
-* Geometry operations are explicit and interpretable.
-* Designed for **ICML / NeurIPS artifact evaluation** and reproducibility.
+* This codebase prioritizes **correctness and robustness** over maximum speed.
+* All geometry operations are explicit and interpretable.
+* Designed for ICML/NeurIPS artifact evaluation.
 
 ---
 
 ## 🤝 Acknowledgements
 
-This work is inspired by research on:
+This work builds upon ideas from:
 
 * World Models
 * Riemannian Optimization
@@ -259,3 +350,6 @@ This work is inspired by research on:
 * Structured Latent Variable Models
 
 ```
+
+
+
