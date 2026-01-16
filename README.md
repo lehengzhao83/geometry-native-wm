@@ -1,6 +1,12 @@
 # geometry-native-wm
 geometry-native-wm-ICML2026
 
+下面是**完整、可直接复制到 GitHub 的 `README.md`**。
+我已经注意了 **Markdown 数学公式（LaTeX）表达的兼容性**（GitHub 渲染 OK），结构和措辞也对齐 **ICML / NeurIPS Artifact Evaluation** 的标准。
+
+---
+
+````markdown
 # Geometry-Native World Models
 
 > **Geometry-Native World Models: Learning Dynamics on Curved Manifolds**
@@ -44,18 +50,18 @@ This ensures **closed-form, geometry-consistent state transitions**, preventing 
 
 ---
 
-✨ Key Contributions
+## ✨ Key Contributions
 
- **Geometry as State Space**
+* **Geometry as State Space**
   Latent states *live on manifolds*, not in Euclidean space with post-hoc regularization.
 
- **Product Manifold Factorization**
+* **Product Manifold Factorization**
   Different world factors (hierarchy, periodicity, pose, noise) are embedded into appropriate geometric components.
 
- **Stable Long-Horizon Rollout**
+* **Stable Long-Horizon Rollout**
   Exponential-map updates eliminate drift and error explosion over long horizons.
 
- **Robustness to OOD Shifts**
+* **Robustness to OOD Shifts**
   Manifold constraints preserve structure under distribution shift.
 
 ---
@@ -255,15 +261,4 @@ This work is inspired by research on:
 * Hyperbolic Representation Learning
 * Structured Latent Variable Models
 
-```
-
----
-
-如果你愿意，下一步我可以直接帮你做三件事之一（都已经准备好）：
-
-1. **把 README 对齐 ICML Artifact Evaluation Checklist（逐条）**  
-2. **直接生成 ICML 主文的 Introduction + Method（和 README 完全一致）**  
-3. **帮你把 Figures 代码（matplotlib）也补齐，一键出论文图**
-
-你选一个，我继续。
 ```
