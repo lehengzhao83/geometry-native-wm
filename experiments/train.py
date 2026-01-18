@@ -50,14 +50,24 @@ from datasets.real_wrapper import build_real_video_datasets
 # -----------------------
 # Config helpers
 # -----------------------
+from omegaconf import OmegaConf
+
 def load_yaml(path: str) -> Dict[str, Any]:
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Config not found: {path}")
     with open(path, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-    if not isinstance(cfg, dict):
+        raw = yaml.safe_load(f)
+
+    if not isinstance(raw, dict):
         raise ValueError("YAML config must parse to a dict.")
-    return cfg
+
+    # 关键：解析 ${...} 插值
+    cfg = OmegaConf.create(raw)
+    resolved = OmegaConf.to_container(cfg, resolve=True)
+
+    if not isinstance(resolved, dict):
+        raise ValueError(f"Resolved config must be dict, got {type(resolved)}")
+    return resolved
 
 
 def ensure_dir(p: str) -> None:
@@ -394,4 +404,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
