@@ -45,7 +45,7 @@ data:
   observation:
     type: symbol_embed          # symbol_embed | onehot | noisy_embed
     vocab_size: auto            # auto | int; if auto => number of nodes
-    embed_dim: 64
+    embed_dim: 16
     noise_std: 0.05             # gaussian noise on embeddings
     dropout_prob: 0.0           # feature dropout probability (0 for stable)
 
@@ -128,7 +128,7 @@ training:
     recon:
       enabled: true
       type: mse
-      weight: 1.0
+      weight: 0.001
 
     # geometry-native geodesic loss (distance on manifold)
     geodesic_rollout:
