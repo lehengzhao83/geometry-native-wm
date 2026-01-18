@@ -39,16 +39,25 @@ from datasets.toy_periodic import build_toy_periodic_datasets
 from datasets.toy_pose import build_toy_pose_datasets
 from datasets.real_wrapper import build_real_video_datasets
 
+from omegaconf import OmegaConf
+
 
 def load_yaml(path: str) -> Dict[str, Any]:
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Config not found: {path}")
     with open(path, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-    if not isinstance(cfg, dict):
-        raise ValueError("YAML config must parse to a dict.")
-    return cfg
+        raw = yaml.safe_load(f)
 
+    if not isinstance(raw, dict):
+        raise ValueError("YAML config must parse to a dict.")
+
+    # 🔑 关键：解析 ${...} 插值
+    cfg = OmegaConf.create(raw)
+    resolved = OmegaConf.to_container(cfg, resolve=True)
+
+    if not isinstance(resolved, dict):
+        raise ValueError(f"Resolved config must be dict, got {type(resolved)}")
+    return resolved
 
 def get_device(cfg: Dict[str, Any]) -> torch.device:
     dev = str(cfg.get("experiment", {}).get("device", "auto")).lower()
